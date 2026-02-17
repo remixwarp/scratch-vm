@@ -253,7 +253,7 @@ class ScriptTreeGenerator {
                 const normalizedName = normalizeValue(name);
                 if (normalizedName === 'is compiled' ||
                     normalizedName === 'is turbowarp' ||
-                    normalizedName === 'is bilup') {
+                    normalizedName === 'is remixwarp') {
                     return {
                         kind: BLOCKS.CONSTANT,
                         value: true

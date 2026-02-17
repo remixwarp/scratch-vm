@@ -2,6 +2,6 @@
 // This can be accessed externally on `vm.runtime.platform`
 
 module.exports = {
-    name: 'Bilup',
-    url: 'https://editor.bilup.org/'
+    name: 'remixwarp',
+    url: 'https://editor.remixwarp.org/'
 };
