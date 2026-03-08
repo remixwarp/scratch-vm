@@ -49,6 +49,11 @@ class Sprite {
          * @type {Array.<!RenderedTarget>}
          */
         this.clones = [];
+        /**
+         * Parent sprite for inheritance
+         * @type {?Sprite}
+         */
+        this.parent = null;
 
         this.soundBank = null;
         if (this.runtime && this.runtime.audioEngine) {
@@ -149,6 +154,47 @@ class Sprite {
         const allNames = this.runtime.targets.map(t => t.sprite.name);
         newSprite.name = StringUtil.unusedName(this.name, allNames);
 
+        const assetPromises = [];
+
+        newSprite.costumes = this.costumes_.map(costume => {
+            const newCostume = Object.assign({}, costume);
+            assetPromises.push(loadCostumeFromAsset(newCostume, this.runtime));
+            return newCostume;
+        });
+
+        newSprite.sounds = this.sounds.map(sound => {
+            const newSound = Object.assign({}, sound);
+            const soundAsset = sound.asset;
+            assetPromises.push(loadSoundFromAsset(newSound, soundAsset, this.runtime, newSprite.soundBank));
+            return newSound;
+        });
+
+        return Promise.all(assetPromises).then(() => newSprite);
+    }
+
+    /**
+     * Create a child sprite that inherits from this sprite
+     * @returns {Promise<Sprite>} Newly created child sprite
+     */
+    createChild () {
+        const newSprite = new Sprite(null, this.runtime);
+        // Set parent relationship
+        newSprite.parent = this;
+        
+        // Inherit blocks from parent
+        const blocksContainer = this.blocks._blocks;
+        const originalBlocks = Object.keys(blocksContainer).map(key => blocksContainer[key]);
+        const copiedBlocks = JSON.parse(JSON.stringify(originalBlocks));
+        newBlockIds(copiedBlocks);
+        copiedBlocks.forEach(block => {
+            newSprite.blocks.createBlock(block);
+        });
+
+        // Set name
+        const allNames = this.runtime.targets.map(t => t.sprite.name);
+        newSprite.name = StringUtil.unusedName(this.name + ' Child', allNames);
+
+        // Inherit costumes and sounds
         const assetPromises = [];
 
         newSprite.costumes = this.costumes_.map(costume => {
