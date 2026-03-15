@@ -206,6 +206,14 @@ class ExtensionManager {
     }
 
     _isValidExtensionURL (extensionURL) {
+        if (typeof extensionURL !== 'string' || extensionURL.length === 0) {
+            return false;
+        }
+        
+        if (extensionURL.startsWith('/')) {
+            return true;
+        }
+        
         try {
             const parsedURL = new URL(extensionURL);
             return (
@@ -217,6 +225,13 @@ class ExtensionManager {
         } catch (e) {
             return false;
         }
+    }
+
+    _resolveExtensionURL (extensionURL) {
+        if (extensionURL.startsWith('/') && typeof window !== 'undefined') {
+            return window.location.origin + extensionURL;
+        }
+        return extensionURL;
     }
 
     /**
@@ -244,7 +259,8 @@ class ExtensionManager {
         this.loadingAsyncExtensions++;
 
         const sandboxMode = await this.securityManager.getSandboxMode(extensionURL);
-        const rewritten = await this.securityManager.rewriteExtensionURL(extensionURL);
+        const resolvedURL = this._resolveExtensionURL(extensionURL);
+        const rewritten = await this.securityManager.rewriteExtensionURL(resolvedURL);
 
         if (sandboxMode === 'unsandboxed') {
             const {load} = require('./tw-unsandboxed-extension-runner');

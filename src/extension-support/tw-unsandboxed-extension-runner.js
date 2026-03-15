@@ -209,7 +209,7 @@ const loadUnsandboxedExtension = (extensionURL, vm) => new Promise((resolve, rej
     const setupWithTimeout = () => new Promise((setupResolve, setupReject) => {
         const setupTimeout = setTimeout(() => {
             setupReject(new Error(`Extension did not register within timeout period`));
-        }, 10000); // 10 second timeout for extension registration
+        }, 30000); // 30 second timeout for extension registration
         
         setupUnsandboxedExtensionAPI(vm).then(extensionObjects => {
             clearTimeout(setupTimeout);
