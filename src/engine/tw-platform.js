@@ -3,5 +3,5 @@
 
 module.exports = {
     name: 'remixwarp',
-    url: 'https://editor.remixwarp.org/'
+    url: 'https://remixwarp.pages.dev/'
 };
