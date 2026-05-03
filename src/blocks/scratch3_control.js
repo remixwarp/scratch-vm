@@ -43,6 +43,7 @@ class Scratch3ControlBlocks {
             control_case: this.case,
             control_default: this.default,
             control_break: this.break,
+            control_continue: this.continue,
             control_case_fallthrough: this.caseFallthrough
         };
     }
