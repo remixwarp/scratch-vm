@@ -84,12 +84,6 @@ class IntermediateScript {
          * @type {boolean}
          */
         this.executableHat = false;
-
-        /**
-         * Custom JavaScript code for this script, if any.
-         * @type {string|null}
-         */
-        this.customCode = null;
     }
 }
 

@@ -1851,33 +1851,13 @@ class JSGenerator {
      */
     compile () {
         setCurrentGenerator(this);
-
-        if (this.script.customCode) {
-            const hasYield = /yield/.test(this.script.customCode);
-            this.script.yields = hasYield;
-            this.source = this.script.customCode;
-            if (!this.script.customCode.trim().endsWith('retire();') && !this.script.customCode.trim().endsWith('return;')) {
-                if (hasYield) {
-                    this.source += '\nretire(); yield;\n';
-                } else {
-                    this.source += '\nretire(); return;\n';
-                }
-            }
-        } else {
-            if (this.script.stack) {
-                this.descendStack(this.script.stack, new Frame(false));
-            }
-            this.stopScript();
+        if (this.script.stack) {
+            this.descendStack(this.script.stack, new Frame(false));
         }
+        this.stopScript();
 
         const factory = this.createScriptFactory();
         const fn = jsexecute.scopedEval(factory);
-
-        const result = {
-            fn: fn,
-            source: factory,
-            jsCode: this.source
-        };
 
         if (this.debug) {
             log.info(`JS: ${this.target.getName()}: compiled ${this.script.procedureCode || 'script'}`, factory);
@@ -1888,7 +1868,7 @@ class JSGenerator {
         }
 
         setCurrentGenerator(null);
-        return result;
+        return fn;
     }
 
     /**
