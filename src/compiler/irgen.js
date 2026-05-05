@@ -1609,25 +1609,47 @@ class ScriptTreeGenerator {
         }
 
         const text = comment.text;
+        let foundCode = false;
+        let codeLines = [];
 
         for (const line of text.split('\n')) {
-            if (!/^tw\b/.test(line)) {
-                continue;
-            }
-
-            const flags = line.split(' ');
-            for (const flag of flags) {
-                switch (flag) {
-                case 'nocompile':
-                    throw new Error('Script explicitly disables compilation');
-                case 'stuck':
-                    this.script.warpTimer = true;
-                    break;
+            if (!foundCode && /^tw\b/.test(line)) {
+                const flags = line.split(' ');
+                for (const flag of flags) {
+                    switch (flag) {
+                    case 'nocompile':
+                        throw new Error('Script explicitly disables compilation');
+                    case 'stuck':
+                        this.script.warpTimer = true;
+                        break;
+                    }
                 }
+
+                // Only the first 'tw' line is parsed.
+                break;
             }
 
-            // Only the first 'tw' line is parsed.
-            break;
+            if (!foundCode) {
+                const trimmedLine = line.trim();
+                if (trimmedLine === '#code' || trimmedLine.startsWith('#code ')) {
+                    foundCode = true;
+                    if (trimmedLine.length > 5) {
+                        codeLines.push(trimmedLine.substring(6));
+                    }
+                } else if (trimmedLine === '#code') {
+                    foundCode = true;
+                }
+            } else {
+                codeLines.push(line);
+            }
+        }
+
+        if (foundCode && codeLines.length > 0) {
+            const code = codeLines.join('\n');
+            this.script.customCode = code;
+            if (/yield/.test(code)) {
+                this.script.yields = true;
+            }
         }
     }
 

@@ -7,9 +7,9 @@ const defaults = new Map();
 // compatible with the original version due to fields vs inputs.
 
 // Scratch Lab Animated Text - https://lab.scratch.mit.edu/text/
-defaults.set('text', '/extensions/turbowarp/lab/text.js');
+defaults.set('text', 'https://rw-extensions.pages.dev/turbowarp/lab/text.js');
 
 // Turboloader's AudioStream
-defaults.set('audiostr', '/extensions/turbowarp/turboloader/audiostream.js');
+defaults.set('audiostr', 'https://rw-extensions.pages.dev/turbowarp/turboloader/audiostream.js');
 
 module.exports = defaults;
