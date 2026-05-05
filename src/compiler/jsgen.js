@@ -1873,6 +1873,12 @@ class JSGenerator {
         const factory = this.createScriptFactory();
         const fn = jsexecute.scopedEval(factory);
 
+        const result = {
+            fn: fn,
+            source: factory,
+            jsCode: this.source
+        };
+
         if (this.debug) {
             log.info(`JS: ${this.target.getName()}: compiled ${this.script.procedureCode || 'script'}`, factory);
         }
@@ -1882,7 +1888,7 @@ class JSGenerator {
         }
 
         setCurrentGenerator(null);
-        return fn;
+        return result;
     }
 
     /**

@@ -41,9 +41,12 @@ const compile = thread => {
     }
 
     return {
-        startingFunction: entry,
-        procedures,
-        executableHat: ir.entry.executableHat
+        startingFunction: entry.fn,
+        procedures: Object.fromEntries(Object.entries(procedures).map(([k, v]) => [k, v.fn])),
+        executableHat: ir.entry.executableHat,
+        source: entry.source,
+        jsCode: entry.jsCode,
+        scriptId: ir.entry.topBlockId
     };
 };
 

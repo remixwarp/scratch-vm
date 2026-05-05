@@ -308,6 +308,24 @@ class VirtualMachine extends EventEmitter {
     }
 
     /**
+     * Get the compiled JavaScript source code for a block.
+     * @param {string} blockId The ID of the block to get compiled source for.
+     * @returns {string|null} The compiled JavaScript code, or null if not found.
+     */
+    getBlockCompiledSource (blockId) {
+        const targets = this.runtime.targets;
+        for (const target of targets) {
+            if (target.blocks) {
+                const cachedResult = target.blocks.getCachedCompileResult(blockId);
+                if (cachedResult && cachedResult.success && cachedResult.value && cachedResult.value.jsCode) {
+                    return cachedResult.value.jsCode;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Set whether the VM is in "turbo mode."
      * When true, loops don't yield to redraw.
      * @param {boolean} turboModeOn Whether turbo mode should be set.
