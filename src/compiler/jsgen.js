@@ -1877,6 +1877,33 @@ class JSGenerator {
     }
 
     /**
+     * Get the JavaScript source code for this script.
+     * Unlike compile(), this returns source code string (factory) instead of evaluating it.
+     * Used by getBlockCompiledSource to get readable JS code.
+     * @returns {string} The JavaScript source code.
+     */
+    getSourceCode () {
+        setCurrentGenerator(this);
+        if (this.script.customCode) {
+            // Use custom code directly as the script body
+            this.source = this.script.customCode;
+            // Ensure yields flag is set if custom code contains yield keyword
+            if (this.script.customCode.includes('yield')) {
+                this.script.yields = true;
+            }
+        } else {
+            // Normal compilation path
+            if (this.script.stack) {
+                this.descendStack(this.script.stack, new Frame(false));
+            }
+            this.stopScript();
+        }
+
+        setCurrentGenerator(null);
+        return this.createScriptFactory();
+    }
+
+    /**
      * @param {string} name
      * @param {number} type
      */

@@ -1963,6 +1963,62 @@ class VirtualMachine extends EventEmitter {
     }
 
     /**
+     * Get the compiled JavaScript source code for a block.
+     * @param {!string} blockId ID of the block to compile.
+     * @returns {?string} The JavaScript source code, or null if the block could not be compiled.
+     */
+    getBlockCompiledSource (blockId) {
+        // Find which target owns this block
+        let targetWithBlock = null;
+        for (const target of this.runtime.targets) {
+            if (target.blocks.getBlock(blockId)) {
+                targetWithBlock = target;
+                break;
+            }
+        }
+
+        if (!targetWithBlock) {
+            // Also check flyout blocks
+            if (this.runtime.flyoutBlocks.getBlock(blockId)) {
+                // Flyout blocks are not executable, cannot compile
+                return null;
+            }
+            // Block not found
+            return null;
+        }
+
+        try {
+            // Import compiler modules (require here to avoid circular dependencies)
+            const Thread = require('./engine/thread');
+            const {IRGenerator} = require('./compiler/irgen');
+            const JSGenerator = require('./compiler/jsgen');
+
+            // Create a thread for this block
+            const thread = new Thread(blockId);
+            thread.target = targetWithBlock;
+            thread.blockContainer = targetWithBlock.blocks;
+
+            // Generate intermediate representation
+            const irGenerator = new IRGenerator(thread);
+            const ir = irGenerator.generate();
+
+            // Get the entry script
+            const entryScript = ir.entry;
+
+            // Create JSGenerator to get source code
+            const jsGenerator = new JSGenerator(entryScript, ir, targetWithBlock);
+
+            // Get the source code
+            const sourceCode = jsGenerator.getSourceCode();
+
+            return sourceCode;
+        } catch (error) {
+            log.error('Failed to get compiled source for block', blockId, error);
+            return null;
+        }
+    }
+
+    /**
      * Allow VM consumer to configure the ScratchLink socket creator.
      * @param {Function} factory The custom ScratchLink socket factory.
      */
