@@ -1610,6 +1610,24 @@ class ScriptTreeGenerator {
 
         const text = comment.text;
 
+        // Check for #code custom JavaScript
+        const lines = text.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.startsWith('#code')) {
+                const codeLines = [line.substring(5).trimStart()]; // Content after #code on same line
+                for (let j = i + 1; j < lines.length; j++) {
+                    codeLines.push(lines[j]);
+                }
+                const code = codeLines.join('\n').trim();
+                if (code) {
+                    this.script.customCode = code;
+                    this.script.yields = code.includes('yield');
+                }
+                return;
+            }
+        }
+
         for (const line of text.split('\n')) {
             if (!/^tw\b/.test(line)) {
                 continue;

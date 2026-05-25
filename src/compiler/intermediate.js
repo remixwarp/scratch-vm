@@ -84,6 +84,14 @@ class IntermediateScript {
          * @type {boolean}
          */
         this.executableHat = false;
+
+        /**
+         * Custom JavaScript code for this script, if any.
+         * When set, the compiler will use this code directly instead of
+         * compiling the block stack. Detected from #code comments.
+         * @type {string|null}
+         */
+        this.customCode = null;
     }
 }
 

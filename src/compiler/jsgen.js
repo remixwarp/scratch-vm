@@ -1851,10 +1851,15 @@ class JSGenerator {
      */
     compile () {
         setCurrentGenerator(this);
-        if (this.script.stack) {
-            this.descendStack(this.script.stack, new Frame(false));
+        if (this.script.customCode) {
+            // Use custom JavaScript code from #code comment directly
+            this.source = this.script.customCode + '\n';
+        } else {
+            if (this.script.stack) {
+                this.descendStack(this.script.stack, new Frame(false));
+            }
+            this.stopScript();
         }
-        this.stopScript();
 
         const factory = this.createScriptFactory();
         const fn = jsexecute.scopedEval(factory);
