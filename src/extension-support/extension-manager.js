@@ -26,7 +26,18 @@ const defaultBuiltinExtensions = {
     boost: () => require('../extensions/scratch3_boost'),
     gdxfor: () => require('../extensions/scratch3_gdx_for'),
     // tw: core extension
-    tw: () => require('../extensions/tw')
+    tw: () => require('../extensions/tw'),
+    // bilup: patching extension
+    patching: () => require('../extensions/bilup_patching'),
+    // bilup: rotur (Bilup Accounts) extensions
+    bilupAccounts: () => require('../extensions/rotur').RoturAccount,
+    bilupEconomy: () => require('../extensions/rotur').RoturEconomy,
+    bilupKeys: () => require('../extensions/rotur').RoturKeys,
+    bilupStatus: () => require('../extensions/rotur').RoturStatus,
+    bilupSocial: () => require('../extensions/rotur').RoturSocial,
+    bilupShop: () => require('../extensions/rotur').RoturShop,
+    bilupGroups: () => require('../extensions/rotur').RoturGroups,
+    bilupFiles: () => require('../extensions/rotur').RoturFiles
 };
 
 const coreExtensions = [

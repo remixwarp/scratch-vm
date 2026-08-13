@@ -21,6 +21,7 @@ const Variable = require('./variable');
 const xmlEscape = require('../util/xml-escape');
 const ScratchLinkWebSocket = require('../util/scratch-link-websocket');
 const FontManager = require('./tw-font-manager');
+const AssetManager = require('./mw-asset-manager');
 const fetchWithTimeout = require('../util/fetch-with-timeout');
 const platform = require('./tw-platform.js');
 
@@ -45,7 +46,8 @@ const defaultBlockPackages = {
     scratch3_sound: require('../blocks/scratch3_sound'),
     scratch3_sensing: require('../blocks/scratch3_sensing'),
     scratch3_data: require('../blocks/scratch3_data'),
-    scratch3_procedures: require('../blocks/scratch3_procedures')
+    scratch3_procedures: require('../blocks/scratch3_procedures'),
+    scratch3_assets: require('../blocks/scratch3_assets')
 };
 
 const interpolate = require('./tw-interpolate');
@@ -316,6 +318,11 @@ class Runtime extends EventEmitter {
          * Ordered map of all monitors, which are MonitorReporter objects.
          */
         this._monitorState = OrderedMap({});
+
+        /**
+         * Responsible for managing custom assets.
+         */
+        this.assetManager = new AssetManager(this);
 
         /**
          * Monitor state from last tick
@@ -2374,6 +2381,7 @@ class Runtime extends EventEmitter {
             this._monitorState = emptyMonitorState;
             this.emit(Runtime.MONITORS_UPDATE, this._monitorState);
         }
+        this.assetManager.clear();
         this.emit(Runtime.RUNTIME_DISPOSED);
         this.ioDevices.clock.resetProjectTimer();
         this.fontManager.clear();
