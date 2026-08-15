@@ -165,6 +165,7 @@ class JSGenerator {
         this._monitorUpdates = new Set();
 
         this.descendedIntoModulo = false;
+        this.expressionTempVariables = [];
         this.isInHat = false;
 
         /**
@@ -1837,6 +1838,10 @@ class JSGenerator {
             script += args.join(',');
         }
         script += ') {\n';
+
+        if (this.expressionTempVariables.length) {
+            script += `var ${this.expressionTempVariables.join(', ')};\n`;
+        }
 
         script += this.source;
 

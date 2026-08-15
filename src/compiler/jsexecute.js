@@ -634,7 +634,9 @@ runtimeFunctions.mod = `const mod = (n, modulus) => {
     let result = n % modulus;
     if (result / modulus < 0) result += modulus;
     return result;
-};`;
+}`;
+
+runtimeFunctions.modP2 = `const modP2 = (n, modulus) => n - (Math.floor(n / modulus) * modulus)`;
 
 /**
  * Implements Scratch tangent.
@@ -652,6 +654,102 @@ runtimeFunctions.tan = `const tan = (angle) => {
     const radians = (Math.PI * angle) / 180;
     return Math.round(Math.tan(radians) * 1e10) / 1e10;
 };`;
+
+runtimeFunctions.tfBase = `const tfBaseChars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const tfBaseValid = /^(?:[2-9]|[12][0-9]|3[0-6])$/;
+const tfBaseIs = (a, b) => tfBaseValid.test(b) &&
+    new RegExp("^[" + tfBaseChars.substring(0, +b) + "]+$").test(a);
+const tfBase = (a, b, c) => {
+    if (tfBaseValid.test(b) && tfBaseValid.test(c) &&
+        new RegExp("^[" + tfBaseChars.substring(0, +b) + "]+$").test(a)) {
+        return parseInt(a, +b).toString(+c).toUpperCase() || "0";
+    }
+    return "0";
+}`;
+
+runtimeFunctions.txtCiRegex = `const txtCiRegex = str => new RegExp(str.replace(/[^a-zA-Z0-9]/g, "\\\\$&"), "gi")`;
+
+runtimeFunctions.txtSplit = `let txtSplitCache; const txtSplit = (string, split) => {
+    if (!(txtSplitCache && txtSplitCache.string === string && txtSplitCache.split === split)) {
+        txtSplitCache = {string, split, arr: string.split(new RegExp(split.replace(/[^a-zA-Z0-9]/g, "\\\\$&"), "gi"))};
+    }
+    return txtSplitCache.arr;
+}`;
+
+runtimeFunctions.txtMatch = `let txtMatchCache; const txtMatch = (string, regex, flags) => {
+    if (txtMatchCache && txtMatchCache.string === string && txtMatchCache.regex === regex && txtMatchCache.flags === flags) {
+        return txtMatchCache.arr;
+    }
+    try {
+        const arr = string.match(new RegExp(regex, flags.includes("g") ? flags : flags + "g")) || [];
+        txtMatchCache = {string, regex, flags, arr};
+        return arr;
+    } catch (e) {
+        console.error(e);
+        return null;
+    }
+}`;
+
+runtimeFunctions.txtIsCase = `const txtIsCase = (string, textCase) => {
+    switch (textCase) {
+    case "lowercase": return string.toLowerCase() === string;
+    case "uppercase": return string.toUpperCase() === string;
+    case "mixedcase": return !(string.toUpperCase() === string || string.toLowerCase() === string);
+    case "titlecase": return string.split(/\\b/g).every(word => {
+        if (!word) return true;
+        return word === word[0].toUpperCase() + word.substring(1);
+    });
+    case "exacttitlecase": return string.split(/\\b/g).every(word => {
+        if (!word) return true;
+        return word === word[0].toUpperCase() + word.substring(1).toLowerCase();
+    });
+    case "camelcase": return /^[^A-Z\\s][^\\s]*$/.test(string);
+    case "randomcase": return true;
+    case "sentencecase": return /^[A-Z][^?.!]*(?:[?.!]\\s+[A-Z][^?.!]*)*$/.test(string);
+    default: return false;
+    }
+}`;
+
+runtimeFunctions.txtToCase = `const txtToCase = (string, textCase) => {
+    let workingText = "";
+    let sentenceCapitalFlag = false;
+    switch (textCase) {
+    case "lowercase": return string.toLowerCase();
+    case "uppercase": return string.toUpperCase();
+    case "mixedcase": return Array.from(string)
+        .map((char, index) => (index % 2 === 0 ? char.toUpperCase() : char.toLowerCase()))
+        .join("");
+    case "titlecase": return string.split(/\\b/g)
+        .map(word => (word ? word[0].toUpperCase() + word.substring(1) : ""))
+        .join("");
+    case "exacttitlecase": return string.split(/\\b/g)
+        .map(word => (word ? word[0].toUpperCase() + word.substring(1).toLowerCase() : ""))
+        .join("");
+    case "sentencecase":
+        for (let i = 0; i < string.length; i++) {
+            if (/^\\s*$/.test(string[i - 1] ?? " ") && !sentenceCapitalFlag &&
+                string[i].toUpperCase() != string[i].toLowerCase()) {
+                workingText += string[i].toUpperCase();
+                sentenceCapitalFlag = true;
+            } else {
+                workingText += string[i].toLowerCase();
+            }
+        }
+        return workingText;
+    case "camelcase":
+        workingText = "";
+        for (let i = 0; i < string.length; i++) {
+            if (/^\\s*$/.test(string[i - 1] ?? " ") &&
+                string[i].toUpperCase() != string[i].toLowerCase()) {
+                workingText += string[i].toUpperCase();
+            } else {
+                workingText += string[i].toLowerCase();
+            }
+        }
+        return workingText;
+    default: return string;
+    }
+}`;
 
 /**
  * @param {function} callback The function to run
