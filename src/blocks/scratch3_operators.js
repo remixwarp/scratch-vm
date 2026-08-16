@@ -20,6 +20,9 @@ class Scratch3OperatorsBlocks {
             operator_subtract: this.subtract,
             operator_multiply: this.multiply,
             operator_divide: this.divide,
+            operator_clamp: this.clamp,
+            operator_min: this.min,
+            operator_max: this.max,
             operator_lt: this.lt,
             operator_equals: this.equals,
             operator_gt: this.gt,
@@ -53,6 +56,33 @@ class Scratch3OperatorsBlocks {
 
     divide (args) {
         return Cast.toNumber(args.NUM1) / Cast.toNumber(args.NUM2);
+    }
+
+    clamp (args) {
+        return Math.min(Math.max(Cast.toNumber(args.NUM), Cast.toNumber(args.MIN)), Cast.toNumber(args.MAX));
+    }
+
+    min (args) {
+        const count = this._operandCount(args);
+        let result = Infinity;
+        for (let i = 1; i <= count; i++) result = Math.min(result, Cast.toNumber(args[`NUM${i}`]));
+        return result;
+    }
+
+    max (args) {
+        const count = this._operandCount(args);
+        let result = -Infinity;
+        for (let i = 1; i <= count; i++) result = Math.max(result, Cast.toNumber(args[`NUM${i}`]));
+        return result;
+    }
+
+    _operandCount (args) {
+        const mutation = args.mutation;
+        if (mutation && mutation.itemcount) {
+            const count = parseInt(mutation.itemcount, 10);
+            if (count >= 2) return count;
+        }
+        return 2;
     }
 
     lt (args) {

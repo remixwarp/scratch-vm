@@ -73,7 +73,9 @@ class Scratch3SensingBlocks {
             sensing_answer: this.getAnswer,
             sensing_online: this.isOnline,
             sensing_username: this.getUsername,
-            sensing_userid: () => {} // legacy no-op block
+            sensing_userid: () => {}, // legacy no-op block
+            sensing_stagewidth: () => this.runtime.stageWidth,
+            sensing_stageheight: () => this.runtime.stageHeight
         };
     }
 
