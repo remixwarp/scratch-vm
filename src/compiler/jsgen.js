@@ -627,6 +627,16 @@ class JSGenerator {
             }
             return new TypedInput(`(${string.asLowerString()}.indexOf(${contains.asLowerString()}) !== -1)`, TYPES.BOOLEAN);
         }
+        case BLOCKS.OP.INDEXOF: {
+            const string = this.descendInput(node.string);
+            const substring = this.descendInput(node.substring);
+            if (string.isAlwaysConstant() && substring.isAlwaysConstant()) {
+                const s = `${string.constantValue}`.toLowerCase();
+                const sub = `${substring.constantValue}`.toLowerCase();
+                return new ConstantInput(s.indexOf(sub) + 1, true);
+            }
+            return new TypedInput(`(${string.asLowerString()}.indexOf(${substring.asLowerString()}) + 1)`, TYPES.NUMBER_INT);
+        }
         case BLOCKS.OP.COS:
             this.usedMathFunctions.add('cos');
             this.usedMathFunctions.add('PI');

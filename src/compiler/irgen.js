@@ -384,6 +384,12 @@ class ScriptTreeGenerator {
                 string: this.descendInputOfBlock(block, 'STRING1'),
                 contains: this.descendInputOfBlock(block, 'STRING2')
             };
+        case 'operator_index_of':
+            return {
+                kind: BLOCKS.OP.INDEXOF,
+                string: this.descendInputOfBlock(block, 'STRING'),
+                substring: this.descendInputOfBlock(block, 'SUBSTRING')
+            };
         case 'operator_divide':
             return {
                 kind: BLOCKS.OP.DIVIDE,

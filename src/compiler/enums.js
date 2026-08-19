@@ -150,6 +150,7 @@ const BLOCKS = {
         LETTEROF: id(),
         LENGTH: id(),
         CONTAINS: id(),
+        INDEXOF: id(),
         MOD: id(),
         EXP: id(),
         JOIN: id(),
