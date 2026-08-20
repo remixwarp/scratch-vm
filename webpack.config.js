@@ -1,6 +1,7 @@
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const defaultsDeep = require('lodash.defaultsdeep');
 const path = require('path');
+const TerserPlugin = require('terser-webpack-plugin');
 
 const base = {
     mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
@@ -31,6 +32,13 @@ const base = {
             }
         }]
     },
+    // Produce smaller, tree-shaken, minified output:
+    //  - usedExports marks dead exports so the minifier can drop them
+    //  - sideEffects:false (declared in package.json) lets the whole library
+    //    be tree-shaken by downstream consumers (e.g. scratch-gui)
+    optimization: {
+        usedExports: true
+    },
     plugins: []
 };
 
@@ -45,6 +53,20 @@ module.exports = [
         output: {
             libraryTarget: 'umd',
             path: path.resolve('dist', 'web')
+        },
+        // Only the .min build is minified; the unminified build stays readable
+        // for debugging. Terser is bundled with webpack 4.
+        optimization: {
+            minimize: true,
+            minimizer: [
+                new TerserPlugin({
+                    include: /scratch-vm\.min\.js$/,
+                    terserOptions: {
+                        compress: {drop_console: true},
+                        output: {comments: false}
+                    }
+                })
+            ]
         },
         module: {
             rules: base.module.rules.concat([
