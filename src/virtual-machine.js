@@ -30,6 +30,33 @@ const Base64Util = require('./util/base64-util');
 
 const RESERVED_NAMES = ['_mouse_', '_stage_', '_edge_', '_myself_', '_random_'];
 
+/**
+ * Detect whether the given project input is actually an HTML document.
+ * Servers (e.g. SPA fallbacks, error pages, WAF challenge pages) commonly
+ * return index.html with an HTTP 200 for missing or cross-origin files.
+ * Feeding those bytes into scratch-parser produces a confusing
+ * "JSON.parse: unexpected character '<'" error that surfaces as a crash.
+ * Fast-failing here lets callers present a friendly message instead.
+ * @param {*} input Project data: string, object, ArrayBuffer or typed array.
+ * @return {boolean} True if the input looks like HTML.
+ */
+const looksLikeHtml = input => {
+    if (input instanceof ArrayBuffer) {
+        const head = new Uint8Array(input.slice(0, Math.min(input.byteLength, 8)));
+        return head.length > 0 && head[0] === 0x3C; // '<'
+    }
+    if (ArrayBuffer.isView(input)) {
+        const head = new Uint8Array(input.buffer, input.byteOffset,
+            Math.min(input.byteLength, 8));
+        return head.length > 0 && head[0] === 0x3C;
+    }
+    if (typeof input === 'string') {
+        // Strip a UTF-8 BOM if present, then check the first significant char.
+        return /^\s*</.test(input.replace(/^\uFEFF/, '').slice(0, 64));
+    }
+    return false;
+};
+
 if (typeof document === 'undefined') {
     global.document = {
         createElement: tagName => {
@@ -480,6 +507,14 @@ class VirtualMachine extends EventEmitter {
      * @return {!Promise} Promise that resolves after targets are installed.
      */
     loadProject (input) {
+        // Fast-fail when the payload looks like an HTML page instead of a
+        // Scratch project. This commonly happens when a server's SPA fallback
+        // (e.g. index.html) is returned with an HTTP 200 for a missing file.
+        if (looksLikeHtml(input)) {
+            return Promise.reject(new Error(
+                'This does not look like a Scratch project. ' +
+                'The server returned an HTML page instead of project data.'));
+        }
         if (typeof input === 'object' && !(input instanceof ArrayBuffer) &&
           !ArrayBuffer.isView(input)) {
             // If the input is an object and not any ArrayBuffer
