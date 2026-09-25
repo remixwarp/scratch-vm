@@ -2095,9 +2095,21 @@ class Runtime extends EventEmitter {
         thread.target = target;
         thread.stackClick = Boolean(opts && opts.stackClick);
         thread.updateMonitor = Boolean(opts && opts.updateMonitor);
-        thread.blockContainer = thread.updateMonitor ?
-            this.monitorBlocks :
-            target.blocks;
+
+        // remixwarp: 正确选择 blockContainer
+        // - monitor thread → monitorBlocks
+        // - target.blocks 里能找到 → target.blocks
+        // - runtime.flyoutBlocks 里能找到 → flyoutBlocks（reporter 在工具箱里的场景）
+        // - 都找不到 → target.blocks（维持原状）
+        if (thread.updateMonitor) {
+            thread.blockContainer = this.monitorBlocks;
+        } else if (target.blocks.getBlock(id)) {
+            thread.blockContainer = target.blocks;
+        } else if (this.flyoutBlocks && this.flyoutBlocks.getBlock(id)) {
+            thread.blockContainer = this.flyoutBlocks;
+        } else {
+            thread.blockContainer = target.blocks;
+        }
 
         thread.pushStack(id);
         this.threads.push(thread);
@@ -2106,7 +2118,12 @@ class Runtime extends EventEmitter {
         }
 
         // tw: compile new threads. Do not attempt to compile monitor threads.
-        if (!(opts && opts.updateMonitor) && this.compilerOptions.enabled) {
+        // remixwarp: stackClick（一次性点击执行，尤其是工具箱 reporter）也跳过 compile：
+        //   1) flyout block 不是完整脚本栈，官方就标注 "cannot compile"
+        //   2) 短寿命单次执行 compile 收益极小
+        //   3) compile 失败会抛错刷屏，完全阻塞 stepThread 执行
+        if (!(opts && opts.updateMonitor) && !(opts && opts.stackClick) &&
+                this.compilerOptions.enabled) {
             thread.tryCompile();
         }
 
