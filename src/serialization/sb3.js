@@ -1184,18 +1184,46 @@ const parseScratchObject = function (object, runtime, extensions, zip, assets) {
         sprite.name = object.name;
     }
     if (Object.prototype.hasOwnProperty.call(object, 'blocks')) {
-        deserializeBlocks(object.blocks);
-        // Take a second pass to create objects and add extensions
-        for (const blockId in object.blocks) {
-            if (!Object.prototype.hasOwnProperty.call(object.blocks, blockId)) continue;
-            const blockJSON = object.blocks[blockId];
-            blocks.createBlock(blockJSON);
-
-            // If the block is from an extension, record it.
-            const extensionID = getExtensionIdForOpcode(blockJSON.opcode);
-            if (extensionID) {
-                extensions.extensionIDs.add(extensionID);
+        if (object.__prebuiltBlocks) {
+            // 快速路径（.rj 二次加载缓存）：直接采用已经展开、运行时就绪的积木表，
+            // 跳过 deserializeBlocks（递归展开压缩输入树、生成原始积木对象）与
+            // 逐积木的 createBlock 循环。把「积木反序列化」从 O(积木数 × 平均输入数)
+            // 的递归展开降到「一次对象赋值 + 收集顶层脚本」，大作品二次加载显著加速。
+            // 正常路径所需的全部信息（inputs/fields 已是展开形态、id 已就位、引用均为
+            // 同表内的 block id）都已经在 __prebuiltBlocks 中，因此可直接当作 _blocks 使用。
+            const prebuilt = object.__prebuiltBlocks;
+            blocks._blocks = prebuilt;
+            for (const blockId in prebuilt) {
+                if (!Object.prototype.hasOwnProperty.call(prebuilt, blockId)) continue;
+                const block = prebuilt[blockId];
+                if (block.topLevel) {
+                    blocks._addScript(blockId);
+                }
+                // If the block is from an extension, record it.
+                const extensionID = getExtensionIdForOpcode(block.opcode);
+                if (extensionID) {
+                    extensions.extensionIDs.add(extensionID);
+                }
             }
+            blocks.resetCache();
+            delete object.__prebuiltBlocks;
+        } else {
+            deserializeBlocks(object.blocks);
+            // Take a second pass to create objects and add extensions
+            for (const blockId in object.blocks) {
+                if (!Object.prototype.hasOwnProperty.call(object.blocks, blockId)) continue;
+                const blockJSON = object.blocks[blockId];
+                // 批量创建：跳过每个积木的 resetCache / emitProjectChanged，
+                // 加载完成后再统一刷新一次缓存，避免上万次无谓开销。
+                blocks.createBlock(blockJSON, {skipSideEffects: true});
+
+                // If the block is from an extension, record it.
+                const extensionID = getExtensionIdForOpcode(blockJSON.opcode);
+                if (extensionID) {
+                    extensions.extensionIDs.add(extensionID);
+                }
+            }
+            blocks.resetCache();
         }
     }
     // Costumes from JSON.
@@ -1334,7 +1362,12 @@ const parseScratchObject = function (object, runtime, extensions, zip, assets) {
         // Make sure if soundBank is undefined, sprite.soundBank is then null.
         sprite.soundBank = soundBank || null;
     });
-    return Promise.all(costumePromises.concat(soundPromises)).then(() => target);
+    // 注意：这里不再 await 素材加载，而是立刻返回 target。
+    // 真正的等待由 deserialize() 在最后统一做。这样在「逐角色同步解析积木」
+    // （最重的一段）的过程中，早已排进事件循环的素材解码（zip 读取 / 图片解码 /
+    // SVG 栅格化）可以穿插进行，把「积木解析」与「素材加载」从串行的 X+Y
+    // 变成接近 max(X, Y)，大幅缩短大作品加载耗时。
+    return target;
 };
 
 const deserializeMonitor = function (monitorData, runtime, targets, extensions) {
@@ -1582,12 +1615,26 @@ const deserialize = async function (json, runtime, zip, isSingleSprite) {
     const monitorObjects = json.monitors || [];
 
     return fontPromise.then(() => targetObjects.map(target => parseScratchAssets(target, runtime, zip)))
-        // Force this promise to wait for the next loop in the js tick. Let
-        // storage have some time to send off asset requests.
-        .then(assets => Promise.resolve(assets))
-        .then(assets => Promise.all(targetObjects
-            .map((target, index) =>
-                parseScratchObject(target, runtime, extensions, zip, assets[index]))))
+        .then(assets => {
+            // 逐个角色解析积木，并在角色之间让出事件循环。
+            // 由于 parseScratchAssets 已经把全部素材请求（zip 读取 / 解码 / SVG 栅格化）
+            // 排进了事件循环，在这里每解析完一个角色就让出一次，就能让这些素材的
+            // 解码与「后续角色的积木解析」并行推进，而不是等所有积木解析完才去加载素材。
+            const targets = [];
+            // eslint-disable-next-line no-async-promise-executor
+            return (async () => {
+                for (let i = 0; i < targetObjects.length; i++) {
+                    targets.push(parseScratchObject(targetObjects[i], runtime, extensions, zip, assets[i]));
+                    // 让出事件循环，给已排队的素材解码任务运行的机会
+                    await Promise.resolve();
+                }
+                // 等所有素材（造型 / 声音）真正就绪，确保 target.sprite.costumes
+                // 在 installTargets 创建 drawable 之前已经设置好。
+                await Promise.all(assets.map(a =>
+                    Promise.all((a.costumePromises || []).concat(a.soundPromises || []))));
+                return targets;
+            })();
+        })
         .then(targets => targets // Re-sort targets back into original sprite-pane ordering
             .map((t, i) => {
                 // Add layer order property to deserialized targets.

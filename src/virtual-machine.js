@@ -515,6 +515,74 @@ class VirtualMachine extends EventEmitter {
                 'This does not look like a Scratch project. ' +
                 'The server returned an HTML page instead of project data.'));
         }
+        // 快速路径：标准 SB3（二进制压缩包 + project.json, projectVersion 3）直接解包并反序列化，
+        // 跳过 scratch-parser 的全量校验。这正是 .rj 走的通路，能让 SB3 与 .rj 一样快。
+        // 对非法 / 非 SB3 的输入（sb1/sb2/从服务器拉的 JSON 等）会自动回退到标准校验流程。
+        if (this._isSB3Zip(input)) {
+            return this._loadSB3FromZip(input);
+        }
+        return this._loadProjectWithParser(input);
+    }
+
+    /**
+     * 判断输入是否为「二进制压缩包」形态（ArrayBuffer / TypedArray / Buffer / Blob）。
+     * 这些通常是从本地打开的 .sb3 文件，可以用快速路径直接解包。
+     * 字符串 / 纯对象（例如从服务器拉取的 JSON）则走标准校验流程。
+     * @param {*} input 原始输入
+     * @returns {boolean} 是否可能是 SB3 压缩包
+     */
+    _isSB3Zip (input) {
+        if (input instanceof ArrayBuffer) return true;
+        if (ArrayBuffer.isView(input)) return true;
+        if (typeof Buffer !== 'undefined' && Buffer.isBuffer(input)) return true;
+        if (typeof Blob !== 'undefined' && input instanceof Blob) return true;
+        return false;
+    }
+
+    /**
+     * 标准 SB3 的快速加载：直接读取 project.json 并交给 deserializeProject，
+     * 跳过 scratch-parser 的重度校验。任何无法确认是标准 SB3 的情况都会回退到
+     * _loadProjectWithParser，因此不会降低兼容性。
+     * @param {ArrayBuffer|Uint8Array|Buffer|Blob} input 压缩包内容
+     * @returns {Promise} 加载完成的 Promise
+     */
+    _loadSB3FromZip (input) {
+        return JSZip.loadAsync(input)
+            .catch(() => null)
+            .then(loadedZip => {
+                if (!loadedZip) {
+                    return this._loadProjectWithParser(input);
+                }
+                const entry = loadedZip.file('project.json');
+                if (!entry) {
+                    return this._loadProjectWithParser(input);
+                }
+                return entry.async('string')
+                    .then(projectText => {
+                        let json;
+                        try {
+                            json = JSON.parse(projectText);
+                        } catch (e) {
+                            return this._loadProjectWithParser(input);
+                        }
+                        // 仅对标准 SB3 走快速路径；sb1/sb2/压缩等交给校验流程
+                        if (!json || json.projectVersion !== 3) {
+                            return this._loadProjectWithParser(input);
+                        }
+                        return this.deserializeProject(json, loadedZip)
+                            .then(() => this.runtime.handleProjectLoaded())
+                            .then(() => undefined);
+                    });
+            });
+    }
+
+    /**
+     * 通过 scratch-parser 校验并加载项目（兼容 sb1/sb2/压缩格式 / 服务器 JSON）。
+     * 这是原先 loadProject 的完整逻辑，作为快速路径的兼容回退。
+     * @param {string | object | ArrayBuffer} input 原始输入
+     * @returns {Promise} 加载完成的 Promise
+     */
+    _loadProjectWithParser (input) {
         if (typeof input === 'object' && !(input instanceof ArrayBuffer) &&
           !ArrayBuffer.isView(input)) {
             // If the input is an object and not any ArrayBuffer

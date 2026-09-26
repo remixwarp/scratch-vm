@@ -640,7 +640,7 @@ class Blocks {
      * Block management: create blocks and scripts from a `create` event
      * @param {!object} block Blockly create event to be processed
      */
-    createBlock (block) {
+    createBlock (block, options) {
         // Does the block already exist?
         // Could happen, e.g., for an unobscured shadow.
         if (Object.prototype.hasOwnProperty.call(this._blocks, block.id)) {
@@ -653,6 +653,14 @@ class Blocks {
         // (if they were top-level XML in the event).
         if (block.topLevel) {
             this._addScript(block.id);
+        }
+
+        // 批量反序列化（加载大作品）时跳过 resetCache / emitProjectChanged。
+        // 否则每创建一个积木都会清空运行缓存并广播 PROJECT_CHANGED，导致上万次
+        // 无谓的缓存失效与 GUI 重渲染 —— 这是大作品加载缓慢的主因之一。
+        // 缓存是惰性重建的（编译器首次需要时自动重算），所以跳过不影响正确性。
+        if (options && options.skipSideEffects) {
+            return;
         }
 
         this.resetCache();
