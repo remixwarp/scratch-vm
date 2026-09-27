@@ -554,6 +554,27 @@ const serializeVariables = function (variables) {
     return obj;
 };
 
+/**
+ * Split comment text at (or before) a limit, but never in the middle of a
+ * fenced code block. Comments can embed blocks inside ```blocks fences, and
+ * cutting a fence in half would corrupt the embedded block XML.
+ * @param {string} text the full comment text
+ * @param {number} limit the maximum length of the primary text field
+ * @returns {{text: string, extraText: string}} the split text
+ */
+const splitCommentText = function (text, limit) {
+    if (text.length <= limit) {
+        return {text: text, extraText: ''};
+    }
+    // Only fall back to a fence boundary when it is reasonably close to the
+    // limit, otherwise we would discard far too much of the comment.
+    const fence = text.lastIndexOf('```', limit);
+    if (fence > limit * 0.5) {
+        return {text: text.substring(0, fence), extraText: text.substring(fence)};
+    }
+    return {text: text.substring(0, limit), extraText: text.substring(limit)};
+};
+
 const serializeComments = function (comments) {
     const obj = Object.create(null);
     for (const commentId in comments) {
@@ -571,9 +592,10 @@ const serializeComments = function (comments) {
         if (comment.text.length > UPSTREAM_MAX_COMMENT_LENGTH) {
             // Upstream's scratch-parser will refuse to load projects if the text is too long, so to maximize
             // compatibility and minimize redundancy we'll store a truncated version in .text and the rest in
-            // another field
-            serializedComment.text = comment.text.substring(0, UPSTREAM_MAX_COMMENT_LENGTH);
-            serializedComment.extraText = comment.text.substring(UPSTREAM_MAX_COMMENT_LENGTH);
+            // another field. The split must not cut a ```blocks fence in half (comments can embed blocks).
+            const split = splitCommentText(comment.text, UPSTREAM_MAX_COMMENT_LENGTH);
+            serializedComment.text = split.text;
+            serializedComment.extraText = split.extraText;
         } else {
             serializedComment.text = comment.text;
         }
@@ -1108,8 +1130,10 @@ const parseScratchAssets = function (object, runtime, zip) {
         soundBank: runtime.audioEngine && runtime.audioEngine.createBank()
     };
 
+    // 注意：必须绑定 runtime，否则取出来的方法在调用时 this 为 undefined，
+    // 会直接抛 "can't access property totalAssetRequests"。
     const wrap = typeof runtime.wrapAssetRequest === 'function' ?
-        runtime.wrapAssetRequest : fn => fn();
+        runtime.wrapAssetRequest.bind(runtime) : fn => fn();
 
     // Costumes from JSON.
     assets.costumeObjects = costumes.map((costumeSource, costumeIndex) => {
