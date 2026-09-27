@@ -448,14 +448,43 @@ class RenderedTarget extends Target {
         );
         if (this.renderer) {
             const costume = this.sprite.costumes[this.currentCostume];
-            this.renderer.updateDrawableSkinId(this.drawableID, costume.skinId);
+            this._applyCostumeSkin(costume);
+        }
+        this.runtime.requestTargetsUpdate(this);
+    }
 
+    /**
+     * 把当前造型的 skin 应用到 drawable；若该造型尚未解码（延迟加载），
+     * 则触发解码并在完成后回填 skin，避免切换到一个空白造型。
+     * @param {object} costume 目标造型对象
+     * @private
+     */
+    _applyCostumeSkin (costume) {
+        if (!costume) return;
+        const apply = () => {
+            this.renderer.updateDrawableSkinId(this.drawableID, costume.skinId);
             if (this.visible) {
                 this.emitVisualChange();
                 this.runtime.requestRedraw();
             }
+        };
+        if (typeof costume.skinId === 'number') {
+            apply();
+            return;
         }
-        this.runtime.requestTargetsUpdate(this);
+        // 延迟加载：skinId 尚未就绪，触发解码后回填。
+        if (typeof costume._lazyLoad === 'function') {
+            if (!costume._lazyPromise) {
+                costume._lazyPromise = Promise.resolve(costume._lazyLoad());
+            }
+            costume._lazyPromise.then(() => {
+                // 解码完成时若它仍是当前造型，才应用 skin。
+                if (this.sprite.costumes[this.currentCostume] === costume &&
+                    typeof costume.skinId === 'number') {
+                    apply();
+                }
+            });
+        }
     }
 
     /**
@@ -687,8 +716,7 @@ class RenderedTarget extends Target {
             this.renderer.updateDrawableDirectionScale(this.drawableID, direction, scale);
             this.renderer.updateDrawableVisible(this.drawableID, this.visible);
 
-            const costume = this.getCostumes()[this.currentCostume];
-            this.renderer.updateDrawableSkinId(this.drawableID, costume.skinId);
+            this._applyCostumeSkin(this.getCostumes()[this.currentCostume]);
 
             for (const effectName in this.effects) {
                 if (!Object.prototype.hasOwnProperty.call(this.effects, effectName)) continue;

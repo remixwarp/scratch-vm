@@ -1079,9 +1079,10 @@ const deserializeBlocks = function (blocks) {
  * @param {!object} object From-JSON "Scratch object:" sprite, stage, watcher.
  * @param {!Runtime} runtime Runtime object to load all structures into.
  * @param {JSZip} zip Sb3 file describing this project (to load assets from)
- * @return {?{costumePromises:Array.<Promise>,soundPromises:Array.<Promise>,soundBank:SoundBank}}
- * Object of arrays of promises for asset objects used in Sprites. As well as a
- * SoundBank for the sound assets. null for unsupported objects.
+ * @return {?{costumeObjects:Array.<object>,eagerCostumePromises:Array.<Promise>,soundObjects:Array.<object>,soundBank:SoundBank}}
+ * 仅当前造型会进入 eagerCostumePromises 被即时解码；其余造型与全部声音通过
+ * 各自的 _lazyLoad 延迟加载（切造型 / 播放声音时触发，或首屏后后台预加载）。
+ * null for unsupported objects.
  */
 const parseScratchAssets = function (object, runtime, zip) {
     if (!Object.prototype.hasOwnProperty.call(object, 'name')) {
@@ -1090,14 +1091,28 @@ const parseScratchAssets = function (object, runtime, zip) {
         return Promise.resolve(null);
     }
 
+    const costumes = object.costumes || [];
+    const currentCostumeIndex = (typeof object.currentCostume === 'number' &&
+        object.currentCostume >= 0 && object.currentCostume < costumes.length) ?
+        object.currentCostume : 0;
+
     const assets = {
-        costumePromises: null,
-        soundPromises: null,
+        // 全部造型的元数据对象（含未解码的）。sprite.costumes 直接指向它，
+        // 以便编辑器 / 索引立即可用，无需等待解码。
+        costumeObjects: [],
+        // 只对本角色「当前造型」做即时解码（初始渲染必须已有 skinId），
+        // 其余造型推迟到真正切到时才解压 + 解码。这是 1GB 大作品秒开的关键。
+        eagerCostumePromises: [],
+        // 全部声音的元数据对象。
+        soundObjects: [],
         soundBank: runtime.audioEngine && runtime.audioEngine.createBank()
     };
 
+    const wrap = typeof runtime.wrapAssetRequest === 'function' ?
+        runtime.wrapAssetRequest : fn => fn();
+
     // Costumes from JSON.
-    assets.costumePromises = (object.costumes || []).map(costumeSource => {
+    assets.costumeObjects = costumes.map((costumeSource, costumeIndex) => {
         // @todo: Make sure all the relevant metadata is being pulled out.
         const costume = {
             // costumeSource only has an asset if an image is being uploaded as
@@ -1118,18 +1133,28 @@ const parseScratchAssets = function (object, runtime, zip) {
             costumeSource.md5ext : `${costumeSource.assetId}.${dataFormat}`;
         costume.md5 = costumeMd5Ext;
         costume.dataFormat = dataFormat;
-        // deserializeCostume should be called on the costume object we're
-        // creating above instead of the source costume object, because this way
-        // we're always loading the 'sb3' representation of the costume
-        // any translation that needs to happen will happen in the process
-        // of building up the costume object into an sb3 format
-        return runtime.wrapAssetRequest(() => deserializeCostume(costume, runtime, zip)
-            .then(() => loadCostume(costumeMd5Ext, costume, runtime)));
-        // Only attempt to load the costume after the deserialization
-        // process has been completed
+
+        // 真正执行「解压 + 解码」的函数。当前造型走 wrap（计入加载进度），
+        // 其余造型 / 声音走原始路径（不污染首屏进度条）。
+        const doLoadRaw = () => deserializeCostume(costume, runtime, zip)
+            .then(() => loadCostume(costumeMd5Ext, costume, runtime));
+        // 延迟加载入口：保证幂等，重复触发只会解码一次。
+        costume._lazyLoad = () => {
+            if (!costume._lazyPromise) costume._lazyPromise = doLoadRaw();
+            return costume._lazyPromise;
+        };
+
+        if (costumeIndex === currentCostumeIndex) {
+            // 当前造型必须立即解码，否则初始画面 / drawable 建立都会失败。
+            assets.eagerCostumePromises.push(wrap(doLoadRaw));
+        }
+        // 其余造型不在此处加载，由 setCostume / 后台预加载按需触发。
+        return costume;
     });
-    // Sounds from JSON
-    assets.soundPromises = (object.sounds || []).map(soundSource => {
+
+    // Sounds from JSON —— 全部延迟加载：声音只有被播放时才需要解码，
+    // 大作品里成百上千个声音若全部立即解码会直接拖垮加载耗时。
+    assets.soundObjects = (object.sounds || []).map(soundSource => {
         const sound = {
             assetId: soundSource.assetId,
             format: soundSource.format,
@@ -1143,15 +1168,13 @@ const parseScratchAssets = function (object, runtime, zip) {
             dataFormat: soundSource.dataFormat,
             data: null
         };
-        // deserializeSound should be called on the sound object we're
-        // creating above instead of the source sound object, because this way
-        // we're always loading the 'sb3' representation of the costume
-        // any translation that needs to happen will happen in the process
-        // of building up the costume object into an sb3 format
-        return runtime.wrapAssetRequest(() => deserializeSound(sound, runtime, zip)
-            .then(() => loadSound(sound, runtime, assets.soundBank)));
-        // Only attempt to load the sound after the deserialization
-        // process has been completed.
+        const doLoadSoundRaw = () => deserializeSound(sound, runtime, zip)
+            .then(() => loadSound(sound, runtime, assets.soundBank));
+        sound._lazyLoad = () => {
+            if (!sound._lazyPromise) sound._lazyPromise = doLoadSoundRaw();
+            return sound._lazyPromise;
+        };
+        return sound;
     });
 
     return assets;
@@ -1226,10 +1249,10 @@ const parseScratchObject = function (object, runtime, extensions, zip, assets) {
             blocks.resetCache();
         }
     }
-    // Costumes from JSON.
-    const {costumePromises} = assets;
-    // Sounds from JSON
-    const {soundBank, soundPromises} = assets;
+    // 造型 / 声音元数据已在 parseScratchAssets 中同步建好，直接挂到 sprite。
+    // 解码（解压 + 栅格化 / 音频解码）按需在 setCostume / 播放声音 / 后台预加载
+    // 时触发，不再在加载时统一阻塞 —— 这是 1GB 大作品秒开的关键。
+    const {costumeObjects, soundObjects, soundBank} = assets;
     // Create the first clone, and load its run-state from JSON.
     const target = sprite.createClone(object.isStage ? StageLayering.BACKGROUND_LAYER : StageLayering.SPRITE_LAYER);
     // Load target properties from JSON.
@@ -1352,16 +1375,11 @@ const parseScratchObject = function (object, runtime, extensions, zip, assets) {
     if (Object.prototype.hasOwnProperty.call(object, 'extensionStorage')) {
         target.extensionStorage = object.extensionStorage;
     }
-    Promise.all(costumePromises).then(costumes => {
-        sprite.costumes = costumes;
-        // Request targets update to refresh GUI when costumes are loaded
-        runtime.requestTargetsUpdate(target);
-    });
-    Promise.all(soundPromises).then(sounds => {
-        sprite.sounds = sounds;
-        // Make sure if soundBank is undefined, sprite.soundBank is then null.
-        sprite.soundBank = soundBank || null;
-    });
+    sprite.costumes = costumeObjects;
+    sprite.sounds = soundObjects;
+    sprite.soundBank = soundBank || null;
+    // 通知 GUI 目标已就绪（造型 / 声音元数据已就位，解码后续按需进行）。
+    runtime.requestTargetsUpdate(target);
     // 注意：这里不再 await 素材加载，而是立刻返回 target。
     // 真正的等待由 deserialize() 在最后统一做。这样在「逐角色同步解析积木」
     // （最重的一段）的过程中，早已排进事件循环的素材解码（zip 读取 / 图片解码 /
@@ -1628,10 +1646,12 @@ const deserialize = async function (json, runtime, zip, isSingleSprite) {
                     // 让出事件循环，给已排队的素材解码任务运行的机会
                     await Promise.resolve();
                 }
-                // 等所有素材（造型 / 声音）真正就绪，确保 target.sprite.costumes
-                // 在 installTargets 创建 drawable 之前已经设置好。
+                // 只等「当前造型」解码完成：installTargets 建立 drawable 时必须
+                // 已有 skinId，否则初始画面空白。其余造型与全部声音均不在此等待，
+                // 留给后续按需加载（setCostume / 播放声音）或后台预加载，
+                // 从而把加载收尾从「全量解码」降到「仅当前造型」。
                 await Promise.all(assets.map(a =>
-                    Promise.all((a.costumePromises || []).concat(a.soundPromises || []))));
+                    Promise.all(a.eagerCostumePromises || [])));
                 return targets;
             })();
         })

@@ -177,14 +177,25 @@ class Scratch3SoundBlocks {
         if (index >= 0) {
             const {target} = util;
             const {sprite} = target;
-            const {soundId} = sprite.sounds[index];
-            if (sprite.soundBank) {
-                if (storeWaiting === STORE_WAITING) {
-                    this._addWaitingSound(target.id, soundId);
-                } else {
-                    this._removeWaitingSound(target.id, soundId);
+            const sound = sprite.sounds[index];
+            if (sprite.soundBank && sound) {
+                const play = () => {
+                    if (storeWaiting === STORE_WAITING) {
+                        this._addWaitingSound(target.id, sound.soundId);
+                    } else {
+                        this._removeWaitingSound(target.id, sound.soundId);
+                    }
+                    return sprite.soundBank.playSound(target, sound.soundId);
+                };
+                // 延迟加载的声音：首次播放前才解码（解压 + 音频解码），
+                // 避免大作品里成百上千个声音在加载时全部解码。
+                if (typeof sound.soundId !== 'number' && typeof sound._lazyLoad === 'function') {
+                    if (!sound._lazyPromise) {
+                        sound._lazyPromise = Promise.resolve(sound._lazyLoad());
+                    }
+                    return sound._lazyPromise.then(play);
                 }
-                return sprite.soundBank.playSound(target, soundId);
+                return play();
             }
         }
     }

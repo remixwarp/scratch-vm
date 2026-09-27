@@ -879,6 +879,9 @@ class VirtualMachine extends EventEmitter {
                         'scratch-vm-installTargets-start',
                         'scratch-vm-installTargets-end'
                     );
+                    // 首屏已可交互：在后台用受控并发补齐其余造型（用于编辑器缩略图），
+                    // 不阻塞 1 秒内的加载。声音保持严格按需（播放时才解码）。
+                    this._backgroundPreloadCostumes(targets);
                     return result;
                 });
             });
@@ -911,6 +914,56 @@ class VirtualMachine extends EventEmitter {
             }
         }
         return Promise.all(extensionPromises);
+    }
+
+    /**
+     * 首屏就绪后，在后台用受控并发补齐「非当前造型」的解码（解压 + 栅格化），
+     * 让编辑器造型缩略图逐步可用，但不阻塞 1 秒内的加载。声音不在后台预加载，
+     * 保持严格按需（播放时才解码）以节省内存。
+     * @param {Array.<Target>} targets - 已安装的目标
+     * @private
+     */
+    _backgroundPreloadCostumes (targets) {
+        const runtime = this.runtime;
+        const jobs = [];
+        for (const target of targets) {
+            if (!target || !target.sprite) continue;
+            const costumes = target.sprite.costumes;
+            for (let i = 0; i < costumes.length; i++) {
+                const costume = costumes[i];
+                // 当前造型已在加载时即时解码；只补齐其余造型。
+                if (typeof costume.skinId === 'number') continue;
+                if (typeof costume._lazyLoad !== 'function') continue;
+                jobs.push({costume, target});
+            }
+        }
+        if (!jobs.length) return;
+
+        const CONCURRENCY = 25; // 与位图解码的 readImage 限流保持一致
+        const UPDATE_EVERY = 32; // 节流：每解码若干造型才通知 GUI 重绘一次
+        let cursor = 0;
+        let active = 0;
+        let done = 0;
+        const pump = () => {
+            while (cursor < jobs.length && active < CONCURRENCY) {
+                const {costume, target} = jobs[cursor++];
+                active++;
+                Promise.resolve(costume._lazyLoad()).then(() => {
+                    active--;
+                    done++;
+                    // 节流刷新，避免上千个造型解码时造成 UI 反复重绘。
+                    if (done % UPDATE_EVERY === 0 || done === jobs.length) {
+                        runtime.requestTargetsUpdate(target);
+                    }
+                    pump();
+                }).catch(() => {
+                    active--;
+                    done++;
+                    pump();
+                });
+            }
+        };
+        pump();
     }
 
     /**
