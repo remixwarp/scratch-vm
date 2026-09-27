@@ -939,31 +939,48 @@ class VirtualMachine extends EventEmitter {
         }
         if (!jobs.length) return;
 
-        const CONCURRENCY = 25; // 与位图解码的 readImage 限流保持一致
+        // 代际令牌：每次加载新项目都 +1，旧的后台预加载检测到令牌变化即中止，
+        // 避免多个项目的预加载叠加把主线程占满。
+        const token = (this._preloadToken = (this._preloadToken || 0) + 1);
+
+        const BATCH = 2;        // 每帧最多解码几个造型，给 UI 留足响应时间
         const UPDATE_EVERY = 32; // 节流：每解码若干造型才通知 GUI 重绘一次
         let cursor = 0;
-        let active = 0;
         let done = 0;
-        const pump = () => {
-            while (cursor < jobs.length && active < CONCURRENCY) {
-                const {costume, target} = jobs[cursor++];
-                active++;
+
+        // 让出事件循环一帧（或退回 setTimeout），使浏览器能绘制并处理用户输入，
+        // 这是修复「首屏后界面卡死」的关键：解码是主线程同步重活，必须分批让出。
+        const yieldFrame = () => new Promise(resolve => {
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+            else setTimeout(resolve, 0);
+        });
+
+        const step = () => {
+            if (token !== this._preloadToken) return; // 已被新项目取消
+            if (typeof document !== 'undefined' && document.hidden) {
+                // 标签页隐藏时不抢主线程，等可见后从断点继续。
+                setTimeout(step, 200);
+                return;
+            }
+            const end = Math.min(cursor + BATCH, jobs.length);
+            const batch = [];
+            for (; cursor < end; cursor++) batch.push(jobs[cursor]);
+            Promise.all(batch.map(({costume, target}) =>
                 Promise.resolve(costume._lazyLoad()).then(() => {
-                    active--;
                     done++;
-                    // 节流刷新，避免上千个造型解码时造成 UI 反复重绘。
                     if (done % UPDATE_EVERY === 0 || done === jobs.length) {
                         runtime.requestTargetsUpdate(target);
                     }
-                    pump();
                 }).catch(() => {
-                    active--;
                     done++;
-                    pump();
-                });
-            }
+                })
+            )).then(() => {
+                if (cursor < jobs.length) {
+                    yieldFrame().then(step);
+                }
+            });
         };
-        pump();
+        step();
     }
 
     /**
