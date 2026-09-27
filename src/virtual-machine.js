@@ -943,44 +943,56 @@ class VirtualMachine extends EventEmitter {
         // 避免多个项目的预加载叠加把主线程占满。
         const token = (this._preloadToken = (this._preloadToken || 0) + 1);
 
-        const BATCH = 2;        // 每帧最多解码几个造型，给 UI 留足响应时间
-        const UPDATE_EVERY = 32; // 节流：每解码若干造型才通知 GUI 重绘一次
+        const BATCH = 3;             // 单次空闲切片最多解码几个造型
+        const UPDATE_INTERVAL_MS = 250; // 时间节流：后台预加载最多每 250ms 通知 GUI 重绘一次
         let cursor = 0;
         let done = 0;
+        let lastUpdate = 0;
 
-        // 让出事件循环一帧（或退回 setTimeout），使浏览器能绘制并处理用户输入，
-        // 这是修复「首屏后界面卡死」的关键：解码是主线程同步重活，必须分批让出。
-        const yieldFrame = () => new Promise(resolve => {
-            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
-            else setTimeout(resolve, 0);
-        });
-
-        const step = () => {
-            if (token !== this._preloadToken) return; // 已被新项目取消
+        // 用 requestIdleCallback：浏览器只在「空闲」（无用户输入、帧预算有余）时才回调，
+        // 因此解码天然不会与用户操作争抢主线程；用户一交互，回调即被推迟。
+        const scheduleIdle = (cb) => {
             if (typeof document !== 'undefined' && document.hidden) {
-                // 标签页隐藏时不抢主线程，等可见后从断点继续。
-                setTimeout(step, 200);
+                // 标签页隐藏时不抢主线程，等可见后继续。
+                setTimeout(() => scheduleIdle(cb), 300);
                 return;
             }
-            const end = Math.min(cursor + BATCH, jobs.length);
+            if (typeof requestIdleCallback === 'function') {
+                requestIdleCallback(cb, {timeout: 300});
+            } else {
+                setTimeout(cb, 0);
+            }
+        };
+
+        const runIdle = () => {
+            if (token !== this._preloadToken) return; // 已被新项目取消
+            const limit = Math.min(cursor + BATCH, jobs.length);
             const batch = [];
-            for (; cursor < end; cursor++) batch.push(jobs[cursor]);
-            Promise.all(batch.map(({costume, target}) =>
-                Promise.resolve(costume._lazyLoad()).then(() => {
-                    done++;
-                    if (done % UPDATE_EVERY === 0 || done === jobs.length) {
-                        runtime.requestTargetsUpdate(target);
-                    }
-                }).catch(() => {
-                    done++;
-                })
+            for (; cursor < limit; cursor++) batch.push(jobs[cursor]);
+            if (!batch.length) return;
+
+            Promise.all(batch.map(({costume}) =>
+                Promise.resolve(costume._lazyLoad())
+                    .then(() => { done++; })
+                    .catch(() => { done++; })
             )).then(() => {
-                if (cursor < jobs.length) {
-                    yieldFrame().then(step);
+                // 时间节流地通知 GUI 重绘；造型 URL 已被 GUI 侧按 assetId 缓存，
+                // 重复重渲染开销很小，不会再次卡顿。
+                const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+                if (done === jobs.length || (now - lastUpdate) >= UPDATE_INTERVAL_MS) {
+                    lastUpdate = now;
+                    const seen = new Set();
+                    for (const {target} of batch) {
+                        if (!seen.has(target)) {
+                            seen.add(target);
+                            runtime.requestTargetsUpdate(target);
+                        }
+                    }
                 }
+                if (cursor < jobs.length) scheduleIdle(runIdle);
             });
         };
-        step();
+        scheduleIdle(runIdle);
     }
 
     /**
